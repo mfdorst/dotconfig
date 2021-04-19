@@ -1,0 +1,24 @@
+source_dir: "$HOME/.dotfiles"
+links:
+  # `src` paths are relative to `source_dir`.
+  # `dest` paths are relative to $HOME.
+
+  - link:
+    src:  emacs-daemon.service
+    dest: $HOME/.config/systemd/user/emacs.service
+
+  - link:
+    src:  emacs-config.el
+    dest: $HOME/.doom.d/config.el
+
+  - link:
+    src:  emacs-init.el
+    dest: $HOME/.doom.d/init.el
+
+  - link:
+    src:  zshrc
+    dest: $HOME/.zshrc
+
+  - link:
+    src:  gitconfig
+    dest: $HOME/.gitconfig
