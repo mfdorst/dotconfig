@@ -1,6 +1,8 @@
 use anyhow::{bail, Result};
 use serde::Deserialize;
 use std::fs;
+use std::fs::File;
+use std::io::BufReader;
 use std::os::unix;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -9,24 +11,17 @@ fn main() -> Result<()> {
     if cfg!(windows) {
         bail!("Windows is not supported.");
     }
-
-    let symlinks_yaml = include_str!("symlinks.yml");
-    // TODO: Look for custom config
     // TODO: provide option to dump the default config
-    let config: Config = serde_yaml::from_str(symlinks_yaml)?;
-    let source_dir: String = shellexpand::full(&config.source_dir)?.into();
-    let source_dir =
-        fs::canonicalize(&source_dir).map_err(|_| Error::MissingDirectory(source_dir))?;
-
-    if !source_dir.exists() {
-        bail!(
-            "Source directory '{}' does not exist.",
-            source_dir.display()
-        );
+    let dotfiles_dir: String = shellexpand::env("$HOME/.dotfiles")?.into();
+    let dotfiles_dir = PathBuf::from(dotfiles_dir);
+    if !dotfiles_dir.exists() {
+        return Err(Error::MissingDotfilesDir(dotfiles_dir).into());
     }
+    let config = get_config(&dotfiles_dir)?;
 
+    // Symlink each file listed in config.links
     for Link { src, dest } in config.links {
-        let src = source_dir.join(src);
+        let src = dotfiles_dir.join(src);
         if !src.exists() {
             println!("Path '{}' does not exist. Skipping...", src.display());
             continue;
@@ -92,6 +87,15 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+fn get_config(source_dir: &PathBuf) -> Result<Config> {
+    let config_file = source_dir.join("symlinks.yml");
+    if !config_file.exists() {
+        return Err(Error::MissingSymlinksYaml(config_file).into());
+    }
+    let reader = BufReader::new(File::open(config_file)?);
+    Ok(serde_yaml::from_reader(reader)?)
+}
+
 #[derive(Deserialize, Debug)]
 struct Config {
     source_dir: String,
@@ -106,6 +110,8 @@ struct Link {
 
 #[derive(Error, Debug)]
 enum Error {
-    #[error("Directory '{0}' does not exist")]
-    MissingDirectory(String),
+    #[error("Missing dotfiles directory ({0}).")]
+    MissingDotfilesDir(PathBuf),
+    #[error("Missing config file ({0}).")]
+    MissingSymlinksYaml(PathBuf),
 }
