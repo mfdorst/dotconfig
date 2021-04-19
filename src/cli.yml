@@ -1,0 +1,16 @@
+name: dotconfig
+author: Michael Dorst <m@mdorst.net>
+about: >-
+  Symlinks configuration files from a central location to wherever they need to be on the system, so that those config
+  files can be maintained under version control.
+args:
+  - dir:
+      short: d
+      long: directory
+      default_value: $HOME/.dotfiles
+      help: Specify a custom source directory.
+  - config:
+      short: c
+      long: config
+      default_value: symlinks.yml
+      help: 'Specify a custom config file. (Default: symlinks.yml)'

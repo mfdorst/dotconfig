@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0.40"
 chrono = "0.4.19"
+clap = { version = "2.33.3", features = ["yaml"] }
 serde = { version = "1.0.125", features = ["derive"] }
 serde_yaml = "0.8.17"
 shellexpand = "2.1.0"

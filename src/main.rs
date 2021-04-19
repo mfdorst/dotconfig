@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use clap::{load_yaml, App, ArgMatches};
 use serde::Deserialize;
 use std::fs;
 use std::fs::File;
@@ -11,13 +12,11 @@ fn main() -> Result<()> {
     if cfg!(windows) {
         bail!("Windows is not supported.");
     }
-    // TODO: provide option to dump the default config
-    let dotfiles_dir: String = shellexpand::env("$HOME/.dotfiles")?.into();
-    let dotfiles_dir = PathBuf::from(dotfiles_dir);
-    if !dotfiles_dir.exists() {
-        return Err(Error::MissingDotfilesDir(dotfiles_dir).into());
-    }
-    let config = get_config(&dotfiles_dir)?;
+
+    let yaml = load_yaml!("cli.yml");
+    let args = App::from_yaml(yaml).get_matches();
+
+    let (config, dotfiles_dir) = get_config(&args)?;
 
     // Symlink each file listed in config.links
     for Link { src, dest } in config.links {
@@ -87,13 +86,26 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn get_config(source_dir: &PathBuf) -> Result<Config> {
-    let config_file = source_dir.join("symlinks.yml");
-    if !config_file.exists() {
-        return Err(Error::MissingSymlinksYaml(config_file).into());
+fn get_config(args: &ArgMatches) -> Result<(Config, PathBuf)> {
+    // It's okay to unwrap here because dir has a default argument and will never be None.
+    let dotfiles_dir = expand_to_path_buf(args.value_of("dir").unwrap())?;
+    // It's okay to unwrap here because config has a default argument and will never be None
+    let config_rel_path = expand_to_path_buf(args.value_of("config").unwrap())?;
+    let config_full_path = dotfiles_dir.join(config_rel_path);
+
+    if !dotfiles_dir.exists() {
+        return Err(Error::MissingDotfilesDir(dotfiles_dir).into());
     }
-    let reader = BufReader::new(File::open(config_file)?);
-    Ok(serde_yaml::from_reader(reader)?)
+    if !config_full_path.exists() {
+        return Err(Error::MissingConfigFile(config_full_path).into());
+    }
+    let reader = BufReader::new(File::open(config_full_path)?);
+    let config: Config = serde_yaml::from_reader(reader)?;
+    Ok((config, dotfiles_dir))
+}
+
+fn expand_to_path_buf(path: &str) -> Result<PathBuf> {
+    Ok(shellexpand::full(path)?.to_string().into())
 }
 
 #[derive(Deserialize, Debug)]
@@ -113,5 +125,5 @@ enum Error {
     #[error("Missing dotfiles directory ({0}).")]
     MissingDotfilesDir(PathBuf),
     #[error("Missing config file ({0}).")]
-    MissingSymlinksYaml(PathBuf),
+    MissingConfigFile(PathBuf),
 }
