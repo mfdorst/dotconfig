@@ -29,35 +29,45 @@ macro_rules! link_error {
     ($fmt:expr, $($arg:tt)*) => { anyhow::Error::from(Error::LinkError(format!($fmt, $($arg)*))) }
 }
 
-macro_rules! link_err {
-    ($fmt:expr, $($arg:tt)*) => { Err(link_error!($fmt, $($arg)*)) }
-}
-
 fn link(src: &str, dest: &str, dotfiles_dir: &PathBuf) -> Result<()> {
     let src = get_src_path(dotfiles_dir, src)?;
+    let dest = get_dest_path(dest)?;
+    print!("Linking {} -> {}...", src.display(), dest.display());
+    match unix::fs::symlink(&src, &dest) {
+        Ok(()) => Ok(println!("done.")),
+        Err(_) => Err(link_error!(
+            "\nFailed to symlink {} -> {}. Skipping...",
+            src.display(),
+            dest.display()
+        )),
+    }
+}
+
+fn get_src_path(dotfiles_dir: &PathBuf, src: &str) -> Result<PathBuf> {
+    let src = dotfiles_dir.join(src);
+    let src = fs::canonicalize(&src)
+        .map_err(|_| link_error!("Path '{}' does not exist. Skipping...", src.display()))?;
+    Ok(src)
+}
+
+fn get_dest_path(dest: &str) -> Result<PathBuf> {
     let dest = expand_to_path_buf(&dest)?;
-    let dest_parent = match dest.parent() {
-        Some(path) => path,
-        None => {
-            // This should only happen if dest is '/'.
-            return link_err!("Cannot link to '{}'. Skipping...", dest.display());
-        }
-    };
-    let dest_parent = match fs::canonicalize(&dest_parent) {
-        Ok(path) => path,
-        Err(_) => {
-            return link_err!(
-                "Cannot link to '{}' because its parent directory does not exist. Skipping...",
-                dest.display()
-            )
-        }
-    };
-    let dest_file_name = match dest.file_name() {
-        Some(file_name) => file_name,
-        None => {
-            return link_err!("Invalid destination path '{}'. Skipping...", dest.display());
-        }
-    };
+
+    // Path::parent() returns None if the path is '/'.
+    let dest_parent = dest.parent().ok_or(link_error!(
+        "Cannot link to '{}'. Skipping...",
+        dest.display()
+    ))?;
+    let dest_parent = fs::canonicalize(&dest_parent).map_err(|_| {
+        link_error!(
+            "Cannot link to '{}' because its parent directory does not exist. Skipping...",
+            dest.display()
+        )
+    })?;
+    let dest_file_name = dest.file_name().ok_or(link_error!(
+        "Invalid destination path '{}'. Skipping...",
+        dest.display()
+    ))?;
     let dest = dest_parent.join(dest_file_name);
 
     if dest.exists() {
@@ -78,25 +88,7 @@ fn link(src: &str, dest: &str, dotfiles_dir: &PathBuf) -> Result<()> {
             Err(_) => println!("\nBackup failed. Skipping..."),
         }
     }
-    print!("Linking {} -> {}...", src.display(), dest.display());
-    match unix::fs::symlink(&src, &dest) {
-        Ok(()) => println!("done."),
-        Err(_) => {
-            return link_err!(
-                "\nFailed to symlink {} -> {}. Skipping...",
-                src.display(),
-                dest.display()
-            )
-        }
-    };
-    Ok(())
-}
-
-fn get_src_path(dotfiles_dir: &PathBuf, src: &str) -> Result<PathBuf> {
-    let src = dotfiles_dir.join(src);
-    let src = fs::canonicalize(&src)
-        .map_err(|_| link_error!("Path '{}' does not exist. Skipping...", src.display()))?;
-    Ok(src)
+    Ok(dest)
 }
 
 fn get_config(args: &ArgMatches) -> Result<(Config, PathBuf)> {
