@@ -8,10 +8,6 @@ use std::os::unix;
 use std::path::PathBuf;
 use thiserror::Error;
 
-macro_rules! link_error {
-    ($fmt:expr, $($arg:tt)*) => { Err(anyhow::Error::from(Error::LinkError(format!($fmt, $($arg)*)))) }
-}
-
 fn main() -> Result<()> {
     if cfg!(windows) {
         bail!("Windows is not supported.");
@@ -30,6 +26,10 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+macro_rules! link_error {
+    ($fmt:expr, $($arg:tt)*) => { Err(anyhow::Error::from(Error::LinkError(format!($fmt, $($arg)*)))) }
 }
 
 fn link(src: &str, dest: &str, dotfiles_dir: &PathBuf) -> Result<()> {
