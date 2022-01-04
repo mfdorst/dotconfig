@@ -1,7 +1,14 @@
 use anyhow::{bail, Result};
 use clap::{load_yaml, App, ArgMatches};
 use serde::Deserialize;
-use std::{ffi::OsStr, fs, fs::File, io::BufReader, os::unix, path::PathBuf};
+use std::{
+    ffi::OsStr,
+    fs::File,
+    fs::{self, read_link},
+    io::BufReader,
+    os::unix,
+    path::PathBuf,
+};
 use thiserror::Error;
 
 fn main() -> Result<()> {
@@ -40,11 +47,31 @@ fn link(src: &str, dest: &str, dotfiles_dir: &PathBuf) -> Result<()> {
         dest.display()
     ))?;
 
-    backup_if_exists(&dest_parent, dest_file_name)?;
+    if dest.exists() {
+        if let Ok(existing_link_src) = read_link(&dest) {
+            if fs::canonicalize(&src)? == fs::canonicalize(&existing_link_src)? {
+                println!(
+                    "Skipping '{}' -> '{}'. File already linked.",
+                    src.display(),
+                    dest.display()
+                );
+                return Ok(());
+            } else {
+                println!(
+                    "The path '{}' is already symlinked to '{}'.",
+                    dest.display(),
+                    existing_link_src.display(),
+                );
+                backup(&dest_parent, dest_file_name)?;
+            }
+        } else {
+            backup(&dest_parent, dest_file_name)?;
+        }
+    }
 
     let dest = dest_parent.join(dest_file_name);
 
-    print!("Linking {} -> {}...", src.display(), dest.display());
+    print!("Linking '{}' -> '{}'...", dest.display(), src.display());
     unix::fs::symlink(&src, &dest)
         .map(|_| println!("done."))
         .map_err(|e| {
@@ -64,27 +91,23 @@ fn get_src_path(dotfiles_dir: &PathBuf, src: &str) -> Result<PathBuf> {
     Ok(src)
 }
 
-fn backup_if_exists(parent_dir: &PathBuf, file_name: &OsStr) -> Result<()> {
+fn backup(parent_dir: &PathBuf, file_name: &OsStr) -> Result<()> {
     let path = parent_dir.join(file_name);
-    if path.exists() {
-        let mut backup_file = file_name.to_owned();
-        backup_file.push(
-            chrono::Local::now()
-                .format("-backup-%Y-%m-%d-%H-%M-%S")
-                .to_string(),
-        );
-        let backup = parent_dir.join(backup_file);
-        print!(
-            "The path '{}' already exists. Backing up to '{}'...",
-            path.display(),
-            backup.display()
-        );
-        fs::rename(&path, backup)
-            .map(|_| println!("done."))
-            .map_err(|e| link_error!("\nBackup faile. {}", e))
-    } else {
-        Ok(())
-    }
+    let mut backup_file = file_name.to_owned();
+    backup_file.push(
+        chrono::Local::now()
+            .format("-backup-%Y-%m-%d-%H-%M-%S")
+            .to_string(),
+    );
+    let backup = parent_dir.join(backup_file);
+    print!(
+        "The path '{}' already exists. Backing up to '{}'...",
+        path.display(),
+        backup.display()
+    );
+    fs::rename(&path, backup)
+        .map(|_| println!("done."))
+        .map_err(|e| link_error!("\nBackup failed. {}", e))
 }
 
 fn get_parent_dir(path: &PathBuf) -> Result<PathBuf> {
