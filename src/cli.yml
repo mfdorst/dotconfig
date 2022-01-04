@@ -7,7 +7,7 @@ args:
   - dir:
       short: d
       long: directory
-      default_value: $HOME/.dotfiles
+      default_value: $HOME/.cfg
       help: Specify a custom source directory.
   - config:
       short: c
