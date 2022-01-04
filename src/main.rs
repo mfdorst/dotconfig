@@ -1,12 +1,7 @@
 use anyhow::{bail, Result};
 use clap::{load_yaml, App, ArgMatches};
 use serde::Deserialize;
-use std::ffi::OsStr;
-use std::fs;
-use std::fs::File;
-use std::io::BufReader;
-use std::os::unix;
-use std::path::PathBuf;
+use std::{ffi::OsStr, fs, fs::File, io::BufReader, os::unix, path::PathBuf};
 use thiserror::Error;
 
 fn main() -> Result<()> {
