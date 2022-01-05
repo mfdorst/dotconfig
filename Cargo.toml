@@ -9,11 +9,12 @@ edition = "2021"
 [dependencies]
 chrono = "0.4.19"
 clap = { version = "3.0.4", features = ["derive"] }
-proc-macro2 = "1.0.36"
 serde = { version = "1.0.133", features = ["derive"] }
 serde_yaml = "0.8.23"
 shellexpand = "2.1.0"
 thiserror = "1.0.30"
 yansi = "0.5.0"
+# Required (for now) to resolve package version conflict between dependencies
+proc-macro2 = "1.0.36"
 
 [features]
