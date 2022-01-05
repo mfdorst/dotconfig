@@ -3,6 +3,14 @@ name = "dotconfig"
 version = "0.1.0"
 authors = ["Michael Dorst <m@mdorst.net>"]
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/mfdorst/dotconfig"
+description = """
+A tool for symlinking configuration files from a central repository to their respective locations on
+the system in a repeatable, configurable way.
+"""
+keywords = ["config", "dotfiles", "installer"]
+categories = ["command-line-utilities"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
