@@ -17,8 +17,10 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 #[derive(Parser, Debug)]
 #[clap(about, author, version)]
 pub struct Cli {
+    /// Specify the directory that holds your config files
     #[clap(short, long, default_value = "$HOME/.cfg")]
     dir: String,
+    /// Specify the YAML file that lists your desired symlinks
     #[clap(short, long, default_value = "symlinks.yml")]
     config: String,
 }
