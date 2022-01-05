@@ -20,8 +20,8 @@ fn main() -> Result<()> {
     let (config, dotfiles_dir) = get_config(&args)?;
 
     // Symlink each file listed in config.links
-    for Link { src, dest } in config.links {
-        if let Err(e) = link(&src, &dest, &dotfiles_dir) {
+    for Link { origin, path: link } in config.links {
+        if let Err(e) = symlink(&origin, &link, &dotfiles_dir) {
             println!("{}", e);
         }
     }
@@ -32,63 +32,63 @@ macro_rules! link_error {
     ($fmt:expr, $($arg:tt)*) => { anyhow::Error::from(Error::LinkError(format!($fmt, $($arg)*))) }
 }
 
-fn link(src: &str, dest: &str, dotfiles_dir: &PathBuf) -> Result<()> {
-    let src = get_src_path(dotfiles_dir, src)?;
-    let dest = expand_to_path_buf(&dest)?;
+fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
+    let origin = get_origin_path(dotfiles_dir, origin)?;
+    let link = expand_to_path_buf(&link)?;
 
-    let dest_parent = get_parent_dir(&dest).map_err(|_| {
+    let link_parent = get_parent_dir(&link).map_err(|_| {
         link_error!(
-            "Cannot link to '{}' because its parent directory does not exist. Skipping...",
-            dest.display()
+            "Cannot create link '{}' because its parent directory does not exist. Skipping...",
+            link.display()
         )
     })?;
-    let dest_file_name = dest.file_name().ok_or(link_error!(
-        "Invalid destination path '{}'. Skipping...",
-        dest.display()
+    let link_file_name = link.file_name().ok_or(link_error!(
+        "Invalid path '{}'. Skipping...",
+        link.display()
     ))?;
 
-    if dest.exists() {
-        if let Ok(existing_link_src) = read_link(&dest) {
-            if fs::canonicalize(&src)? == fs::canonicalize(&existing_link_src)? {
+    if link.exists() {
+        if let Ok(existing_link_origin) = read_link(&link) {
+            if fs::canonicalize(&origin)? == fs::canonicalize(&existing_link_origin)? {
                 println!(
                     "Skipping '{}' -> '{}'. File already linked.",
-                    src.display(),
-                    dest.display()
+                    origin.display(),
+                    link.display()
                 );
                 return Ok(());
             } else {
                 println!(
-                    "The path '{}' is already symlinked to '{}'.",
-                    dest.display(),
-                    existing_link_src.display(),
+                    "The path '{}' is already linked to '{}'.",
+                    link.display(),
+                    existing_link_origin.display(),
                 );
-                backup(&dest_parent, dest_file_name)?;
+                backup(&link_parent, link_file_name)?;
             }
         } else {
-            backup(&dest_parent, dest_file_name)?;
+            backup(&link_parent, link_file_name)?;
         }
     }
 
-    let dest = dest_parent.join(dest_file_name);
+    let link = link_parent.join(link_file_name);
 
-    print!("Linking '{}' -> '{}'...", dest.display(), src.display());
-    unix::fs::symlink(&src, &dest)
+    print!("Linking '{}' -> '{}'...", link.display(), origin.display());
+    unix::fs::symlink(&origin, &link)
         .map(|_| println!("done."))
         .map_err(|e| {
             link_error!(
-                "\nFailed to symlink {} -> {}. {}. Skipping...",
-                src.display(),
-                dest.display(),
+                "\nFailed to link {} -> {}. {}. Skipping...",
+                origin.display(),
+                link.display(),
                 e
             )
         })
 }
 
-fn get_src_path(dotfiles_dir: &PathBuf, src: &str) -> Result<PathBuf> {
-    let src = dotfiles_dir.join(src);
-    let src = fs::canonicalize(&src)
-        .map_err(|_| link_error!("Path '{}' does not exist. Skipping...", src.display()))?;
-    Ok(src)
+fn get_origin_path(dotfiles_dir: &PathBuf, origin: &str) -> Result<PathBuf> {
+    let origin = dotfiles_dir.join(origin);
+    let origin = fs::canonicalize(&origin)
+        .map_err(|_| link_error!("Path '{}' does not exist. Skipping...", origin.display()))?;
+    Ok(origin)
 }
 
 fn backup(parent_dir: &PathBuf, file_name: &OsStr) -> Result<()> {
@@ -147,8 +147,8 @@ struct Config {
 
 #[derive(Deserialize, Debug)]
 struct Link {
-    src: String,
-    dest: String,
+    path: String,
+    origin: String,
 }
 
 #[derive(Error, Debug)]
