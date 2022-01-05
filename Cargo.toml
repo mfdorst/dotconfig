@@ -14,3 +14,4 @@ serde = { version = "1.0.125", features = ["derive"] }
 serde_yaml = "0.8.17"
 shellexpand = "2.1.0"
 thiserror = "1.0.24"
+yansi = "0.5.0"

@@ -10,6 +10,7 @@ use std::{
     path::PathBuf,
 };
 use thiserror::Error;
+use yansi::Paint;
 
 fn main() -> Result<()> {
     if cfg!(windows) {
@@ -38,57 +39,86 @@ fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
 
     let link_parent = get_parent_dir(&link).map_err(|_| {
         link_error!(
-            "Cannot create link '{}' because its parent directory does not exist. Skipping...",
-            link.display()
+            "{} '{}' {}",
+            Paint::red("Cannot create link"),
+            link.display(),
+            Paint::red("because its parent directory does not exist. Skipping...")
         )
     })?;
     let link_file_name = link.file_name().ok_or(link_error!(
-        "Invalid path '{}'. Skipping...",
-        link.display()
+        "{} '{}'. {}",
+        Paint::red("Invalid path"),
+        link.display(),
+        Paint::red("Skipping...")
     ))?;
 
     if link.exists() {
         if let Ok(existing_link_origin) = read_link(&link) {
             if fs::canonicalize(&origin)? == fs::canonicalize(&existing_link_origin)? {
                 println!(
-                    "Skipping '{}' -> '{}'. File already linked.",
+                    "{} '{}' {} '{}'{}",
+                    Paint::green("Skipping"),
                     origin.display(),
-                    link.display()
+                    Paint::green("->"),
+                    link.display(),
+                    Paint::green(". File already linked.")
                 );
                 return Ok(());
             } else {
                 print!(
-                    "The path '{}' is already linked to '{}'. ",
+                    "{} '{}' {} '{}'{} ",
+                    Paint::yellow("The path"),
                     link.display(),
+                    Paint::yellow("is already linked to"),
                     existing_link_origin.display(),
+                    Paint::yellow(".")
                 );
                 backup(&link_parent, link_file_name)?;
             }
         } else {
-            print!("The path '{}' already exists. ", link.display());
+            print!(
+                "{} '{}' {} ",
+                Paint::yellow("The path"),
+                link.display(),
+                Paint::yellow("already exists.")
+            );
             backup(&link_parent, link_file_name)?;
         }
     }
 
     let link = link_parent.join(link_file_name);
 
-    print!("Linking '{}' -> '{}'...", link.display(), origin.display());
+    print!(
+        "{} '{}' {} '{}'...",
+        Paint::yellow("Linking"),
+        link.display(),
+        Paint::yellow("->"),
+        origin.display()
+    );
     unix::fs::symlink(&origin, &link)
-        .map(|_| println!("done."))
+        .map(|_| println!("{}", Paint::green("done.")))
         .map_err(|e| {
             link_error!(
-                "\nFailed to link {} -> {}. {}. Skipping...",
+                "\n{} {} -> {}. {}. {}",
+                Paint::red("Failed to link"),
                 origin.display(),
                 link.display(),
-                e
+                Paint::yellow(e),
+                Paint::red("Skipping...")
             )
         })
 }
 
 fn get_origin_path(dotfiles_dir: &PathBuf, origin: &str) -> Result<PathBuf> {
     let origin = dotfiles_dir.join(origin);
-    let origin = fs::canonicalize(&origin)
-        .map_err(|_| link_error!("Path '{}' does not exist. Skipping...", origin.display()))?;
+    let origin = fs::canonicalize(&origin).map_err(|_| {
+        link_error!(
+            "{} '{}' {}",
+            Paint::red("The path"),
+            origin.display(),
+            Paint::red("does not exist. Skipping...")
+        )
+    })?;
     Ok(origin)
 }
 
@@ -101,10 +131,14 @@ fn backup(parent_dir: &PathBuf, file_name: &OsStr) -> Result<()> {
             .to_string(),
     );
     let backup = parent_dir.join(backup_file);
-    print!("Backing up to '{}'...", backup.display());
+    print!(
+        "{} '{}'...",
+        Paint::yellow("Backing up to"),
+        backup.display()
+    );
     fs::rename(&path, backup)
-        .map(|_| println!("done."))
-        .map_err(|e| link_error!("\nBackup failed. {}", e))
+        .map(|_| println!("{}", Paint::green("done.")))
+        .map_err(|e| link_error!("{} {}", Paint::red("Backup failed."), Paint::yellow(e)))
 }
 
 fn get_parent_dir(path: &PathBuf) -> Result<PathBuf> {
