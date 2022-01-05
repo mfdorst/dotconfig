@@ -1,4 +1,4 @@
-use clap::{load_yaml, App, ArgMatches};
+use clap::Parser;
 use serde::Deserialize;
 use std::{
     ffi::OsStr,
@@ -12,13 +12,23 @@ use yansi::Paint;
 
 type Result<T, E = Error> = std::result::Result<T, E>;
 
+/// Symlinks configuration files from a central location to wherever they need to be on the system,
+/// so that those config files can be maintained under version control.
+#[derive(Parser, Debug)]
+#[clap(about, author, version)]
+pub struct Cli {
+    #[clap(short, long, default_value = "$HOME/.cfg")]
+    dir: String,
+    #[clap(short, long, default_value = "symlinks.yml")]
+    config: String,
+}
+
 fn main() -> Result<()> {
     if cfg!(windows) {
         return Err(Error::UnsupportedPlatform);
     }
-    let yaml = load_yaml!("cli.yml");
-    let args = App::from_yaml(yaml).get_matches();
-    let (config, dotfiles_dir) = get_config(&args)?;
+    let cli = Cli::parse();
+    let (config, dotfiles_dir) = get_config(&cli)?;
 
     // Symlink each file listed in config.links
     for Link { origin, path: link } in config.links {
@@ -35,7 +45,7 @@ macro_rules! link_error {
 
 fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
     let origin = get_origin_path(dotfiles_dir, origin)?;
-    let link = expand_to_path_buf(&link)?;
+    let link = PathBuf::from(shellexpand::full(link)?.into_owned());
 
     let link_parent = get_parent_dir(&link).map_err(|_| {
         link_error!(
@@ -149,26 +159,20 @@ fn get_parent_dir(path: &PathBuf) -> Result<PathBuf> {
     }
 }
 
-fn get_config(args: &ArgMatches) -> Result<(Config, PathBuf)> {
-    // It's okay to unwrap here because dir has a default argument and will never be None.
-    let dotfiles_dir = expand_to_path_buf(args.value_of("dir").unwrap())?;
-    // It's okay to unwrap here because config has a default argument and will never be None
-    let config_rel_path = expand_to_path_buf(args.value_of("config").unwrap())?;
+fn get_config(cli: &Cli) -> Result<(Config, PathBuf)> {
+    let dotfiles_dir = PathBuf::from(shellexpand::full(&cli.dir)?.into_owned());
+    let config_rel_path = PathBuf::from(shellexpand::full(&cli.config)?.into_owned());
     let config_full_path = dotfiles_dir.join(config_rel_path);
 
     if !dotfiles_dir.exists() {
-        return Err(Error::MissingDotfilesDir(dotfiles_dir).into());
+        return Err(Error::MissingDotfilesDir(dotfiles_dir));
     }
     if !config_full_path.exists() {
-        return Err(Error::MissingConfigFile(config_full_path).into());
+        return Err(Error::MissingConfigFile(config_full_path));
     }
     let reader = BufReader::new(File::open(config_full_path)?);
     let config: Config = serde_yaml::from_reader(reader)?;
     Ok((config, dotfiles_dir))
-}
-
-fn expand_to_path_buf(path: &str) -> Result<PathBuf> {
-    Ok(shellexpand::full(path)?.to_string().into())
 }
 
 #[derive(Deserialize, Debug)]
