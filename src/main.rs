@@ -1,10 +1,8 @@
-use anyhow::{bail, Result};
 use clap::{load_yaml, App, ArgMatches};
 use serde::Deserialize;
 use std::{
     ffi::OsStr,
-    fs::File,
-    fs::{self, read_link},
+    fs::{self, read_link, File},
     io::BufReader,
     os::unix,
     path::PathBuf,
@@ -12,9 +10,11 @@ use std::{
 use thiserror::Error;
 use yansi::Paint;
 
+type Result<T, E = Error> = std::result::Result<T, E>;
+
 fn main() -> Result<()> {
     if cfg!(windows) {
-        bail!("Windows is not supported.");
+        return Err(Error::UnsupportedPlatform);
     }
     let yaml = load_yaml!("cli.yml");
     let args = App::from_yaml(yaml).get_matches();
@@ -30,7 +30,7 @@ fn main() -> Result<()> {
 }
 
 macro_rules! link_error {
-    ($fmt:expr, $($arg:tt)*) => { anyhow::Error::from(Error::LinkError(format!($fmt, $($arg)*))) }
+    ($fmt:expr, $($arg:tt)*) => { Error::LinkError(format!($fmt, $($arg)*)) }
 }
 
 fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
@@ -145,7 +145,7 @@ fn get_parent_dir(path: &PathBuf) -> Result<PathBuf> {
     if let Some(parent_dir) = path.parent() {
         fs::canonicalize(&parent_dir).map_err(|e| e.into())
     } else {
-        bail!("Cannot get parent of '{}'.", path.display())
+        Err(Error::NoParentDir(path.clone()))
     }
 }
 
@@ -190,4 +190,14 @@ enum Error {
     MissingConfigFile(PathBuf),
     #[error("{0}")]
     LinkError(String),
+    #[error("Windows is not supported.")]
+    UnsupportedPlatform,
+    #[error("Cannot get parent directory of '{0}'.")]
+    NoParentDir(PathBuf),
+    #[error("IoError: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Eror in YAML ({0})")]
+    YamlError(#[from] serde_yaml::Error),
+    #[error("Unknown variable ({0})")]
+    ShellexpandLookupError(#[from] shellexpand::LookupError<std::env::VarError>),
 }
