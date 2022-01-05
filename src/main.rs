@@ -57,14 +57,15 @@ fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
                 );
                 return Ok(());
             } else {
-                println!(
-                    "The path '{}' is already linked to '{}'.",
+                print!(
+                    "The path '{}' is already linked to '{}'. ",
                     link.display(),
                     existing_link_origin.display(),
                 );
                 backup(&link_parent, link_file_name)?;
             }
         } else {
+            print!("The path '{}' already exists. ", link.display());
             backup(&link_parent, link_file_name)?;
         }
     }
@@ -100,11 +101,7 @@ fn backup(parent_dir: &PathBuf, file_name: &OsStr) -> Result<()> {
             .to_string(),
     );
     let backup = parent_dir.join(backup_file);
-    print!(
-        "The path '{}' already exists. Backing up to '{}'...",
-        path.display(),
-        backup.display()
-    );
+    print!("Backing up to '{}'...", backup.display());
     fs::rename(&path, backup)
         .map(|_| println!("done."))
         .map_err(|e| link_error!("\nBackup failed. {}", e))
