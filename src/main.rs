@@ -49,12 +49,12 @@ fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
     let origin = get_origin_path(dotfiles_dir, origin)?;
     let link = PathBuf::from(shellexpand::full(link)?.into_owned());
 
-    let link_parent = get_parent_dir(&link).map_err(|_| {
+    let link_parent = fs::canonicalize(&link).map_err(|_| {
         link_error!(
             "{} '{}' {}",
             Paint::red("Cannot create link"),
             link.display(),
-            Paint::red("because its parent directory does not exist. Skipping...")
+            Paint::red("because the parent directory does not exist. Skipping...")
         )
     })?;
     let link_file_name = link.file_name().ok_or(link_error!(
@@ -153,14 +153,6 @@ fn backup(parent_dir: &PathBuf, file_name: &OsStr) -> Result<()> {
         .map_err(|e| link_error!("{} {}", Paint::red("Backup failed."), Paint::yellow(e)))
 }
 
-fn get_parent_dir(path: &PathBuf) -> Result<PathBuf> {
-    if let Some(parent_dir) = path.parent() {
-        fs::canonicalize(&parent_dir).map_err(|e| e.into())
-    } else {
-        Err(Error::NoParentDir(path.clone()))
-    }
-}
-
 fn get_config(cli: &Cli) -> Result<(Config, PathBuf)> {
     let dotfiles_dir = PathBuf::from(shellexpand::full(&cli.dir)?.into_owned());
     let config_rel_path = PathBuf::from(shellexpand::full(&cli.config)?.into_owned());
@@ -198,8 +190,6 @@ enum Error {
     LinkError(String),
     #[error("Windows is not supported.")]
     UnsupportedPlatform,
-    #[error("Cannot get parent directory of '{0}'.")]
-    NoParentDir(PathBuf),
     #[error("IoError: {0}")]
     IoError(#[from] std::io::Error),
     #[error("Eror in YAML ({0})")]
