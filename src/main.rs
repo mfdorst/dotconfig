@@ -30,10 +30,23 @@ fn main() -> Result<()> {
         return Err(Error::UnsupportedPlatform);
     }
     let cli = Cli::parse();
-    let (config, dotfiles_dir) = get_config(&cli)?;
+
+    // Get the paths of the dotfiles directory and the symlink list
+    let dotfiles_dir = PathBuf::from(shellexpand::full(&cli.dir)?.into_owned());
+    let symlink_list_rel_path = PathBuf::from(shellexpand::full(&cli.config)?.into_owned());
+    let symlink_list_full_path = dotfiles_dir.join(symlink_list_rel_path);
+
+    if !dotfiles_dir.exists() {
+        return Err(Error::MissingDotfilesDir(dotfiles_dir));
+    }
+    if !symlink_list_full_path.exists() {
+        return Err(Error::MissingSymlinkListFile(symlink_list_full_path));
+    }
+    let reader = BufReader::new(File::open(symlink_list_full_path)?);
+    let symlink_list: SymlinkList = serde_yaml::from_reader(reader)?;
 
     // Symlink each file listed in config.links
-    for Link { origin, path: link } in config.links {
+    for Link { origin, path: link } in symlink_list.links {
         if let Err(e) = symlink(&origin, &link, &dotfiles_dir) {
             println!("{}", e);
         }
@@ -153,24 +166,8 @@ fn backup(parent_dir: &PathBuf, file_name: &OsStr) -> Result<()> {
         .map_err(|e| link_error!("{} {}", Paint::red("Backup failed."), Paint::yellow(e)))
 }
 
-fn get_config(cli: &Cli) -> Result<(Config, PathBuf)> {
-    let dotfiles_dir = PathBuf::from(shellexpand::full(&cli.dir)?.into_owned());
-    let config_rel_path = PathBuf::from(shellexpand::full(&cli.config)?.into_owned());
-    let config_full_path = dotfiles_dir.join(config_rel_path);
-
-    if !dotfiles_dir.exists() {
-        return Err(Error::MissingDotfilesDir(dotfiles_dir));
-    }
-    if !config_full_path.exists() {
-        return Err(Error::MissingConfigFile(config_full_path));
-    }
-    let reader = BufReader::new(File::open(config_full_path)?);
-    let config: Config = serde_yaml::from_reader(reader)?;
-    Ok((config, dotfiles_dir))
-}
-
 #[derive(Deserialize, Debug)]
-struct Config {
+struct SymlinkList {
     links: Vec<Link>,
 }
 
@@ -182,10 +179,10 @@ struct Link {
 
 #[derive(Error, Debug)]
 enum Error {
-    #[error("Missing dotfiles directory ({0}).")]
+    #[error("The dotfiles directory ({0}) does not exist.")]
     MissingDotfilesDir(PathBuf),
-    #[error("Missing config file ({0}).")]
-    MissingConfigFile(PathBuf),
+    #[error("The symlink list file ({0}) does not exist.")]
+    MissingSymlinkListFile(PathBuf),
     #[error("{0}")]
     LinkError(String),
     #[error("Windows is not supported.")]
