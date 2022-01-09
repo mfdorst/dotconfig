@@ -113,8 +113,6 @@ fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
         }
     }
 
-    let link = link_parent.join(link_file_name);
-
     print!(
         "{} '{}' {} '{}'...",
         Paint::yellow("Linking"),
