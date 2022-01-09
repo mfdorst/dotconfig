@@ -58,7 +58,13 @@ fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
     let origin = get_origin_path(dotfiles_dir, origin)?;
     let link = PathBuf::from(shellexpand::full(link)?.into_owned());
 
-    let link_parent = fs::canonicalize(&link).map_err(|_| {
+    let link_parent = fs::canonicalize(link.parent().ok_or(Error::LinkError(format!(
+        "{} '{}' {}",
+        Paint::red("Invalid path {}",),
+        link.display(),
+        Paint::red("Skipping...")
+    )))?)
+    .map_err(|_| {
         Error::LinkError(format!(
             "{} '{}' {}",
             Paint::red("Cannot create link"),
