@@ -54,6 +54,22 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Create a symlink from `link` to `origin`. If `origin` already exists, back it up (rename it to
+/// `<filename>-backup-<date>`) first. If the symlink already exists, do nothing. If either `link`
+/// or `origin` are invalid paths, do nothing.
+///
+/// # Params
+/// + `link` - The path where the symlink will be created.
+/// + `origin` - The path that the symlink will point to. Relative to `dotfiles_dir`.
+/// + `dotfiles_dir` - The dotfiles directory that contains `origin`.
+///
+/// # Errors
+///
+/// + [`Error::LinkError`]
+///     + If the path `link` does not exist. Either:
+///         + the parent directory does not exist, or
+///         + the path is invalid in some other way, such as not being relative to root (`/`).
+///     + If the symlink failed for some other reason (probably a bug).
 fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
     let origin = get_origin_path(dotfiles_dir, origin)?;
     let link = PathBuf::from(shellexpand::full(link)?.into_owned());
