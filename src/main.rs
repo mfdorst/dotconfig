@@ -54,28 +54,24 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-macro_rules! link_error {
-    ($fmt:expr, $($arg:tt)*) => { Error::LinkError(format!($fmt, $($arg)*)) }
-}
-
 fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
     let origin = get_origin_path(dotfiles_dir, origin)?;
     let link = PathBuf::from(shellexpand::full(link)?.into_owned());
 
     let link_parent = fs::canonicalize(&link).map_err(|_| {
-        link_error!(
+        Error::LinkError(format!(
             "{} '{}' {}",
             Paint::red("Cannot create link"),
             link.display(),
             Paint::red("because the parent directory does not exist. Skipping...")
-        )
+        ))
     })?;
-    let link_file_name = link.file_name().ok_or(link_error!(
+    let link_file_name = link.file_name().ok_or(Error::LinkError(format!(
         "{} '{}'. {}",
         Paint::red("Invalid path"),
         link.display(),
         Paint::red("Skipping...")
-    ))?;
+    )))?;
 
     if link.exists() {
         if let Ok(existing_link_origin) = read_link(&link) {
@@ -123,26 +119,26 @@ fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
     unix::fs::symlink(&origin, &link)
         .map(|_| println!("{}", Paint::green("done.")))
         .map_err(|e| {
-            link_error!(
+            Error::LinkError(format!(
                 "\n{} {} -> {}. {}. {}",
                 Paint::red("Failed to link"),
                 origin.display(),
                 link.display(),
                 Paint::yellow(e),
                 Paint::red("Skipping...")
-            )
+            ))
         })
 }
 
 fn get_origin_path(dotfiles_dir: &PathBuf, origin: &str) -> Result<PathBuf> {
     let origin = dotfiles_dir.join(origin);
     let origin = fs::canonicalize(&origin).map_err(|_| {
-        link_error!(
+        Error::LinkError(format!(
             "{} '{}' {}",
             Paint::red("The path"),
             origin.display(),
             Paint::red("does not exist. Skipping...")
-        )
+        ))
     })?;
     Ok(origin)
 }
@@ -163,7 +159,13 @@ fn backup(parent_dir: &PathBuf, file_name: &OsStr) -> Result<()> {
     );
     fs::rename(&path, backup)
         .map(|_| println!("{}", Paint::green("done.")))
-        .map_err(|e| link_error!("{} {}", Paint::red("Backup failed."), Paint::yellow(e)))
+        .map_err(|e| {
+            Error::LinkError(format!(
+                "{} {}",
+                Paint::red("Backup failed."),
+                Paint::yellow(e)
+            ))
+        })
 }
 
 #[derive(Deserialize, Debug)]
