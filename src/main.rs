@@ -188,29 +188,34 @@ fn expand_paths(
     Ok((origin, link, link_parent, link_filename))
 }
 
+/// Rename a file to `<filename>-backup-<date>`.
+///
+/// # Errors
+/// + [Error::LinkError] if the renaming fails for some reason.
 fn backup(parent_dir: &PathBuf, file_name: OsString) -> Result<()> {
     let path = parent_dir.join(&file_name);
     let mut backup_file = file_name;
-    backup_file.push(
-        chrono::Local::now()
-            .format("-backup-%Y-%m-%d-%H-%M-%S")
-            .to_string(),
-    );
+    let date = chrono::Local::now()
+        .format("-backup-%Y-%m-%d-%H-%M-%S")
+        .to_string();
+    backup_file.push(date);
     let backup = parent_dir.join(backup_file);
     print!(
         "{} '{}'...",
         Paint::yellow("Backing up to"),
         backup.display()
     );
-    fs::rename(&path, backup)
-        .map(|_| println!("{}", Paint::green("done.")))
-        .map_err(|e| {
-            Error::LinkError(format!(
-                "{} {}",
-                Paint::red("Backup failed."),
-                Paint::yellow(e)
-            ))
-        })
+    match fs::rename(&path, backup) {
+        Ok(_) => {
+            println!("{}", Paint::green("done."));
+            Ok(())
+        }
+        Err(e) => Err(Error::LinkError(format!(
+            "{} {}",
+            Paint::red("Backup failed."),
+            Paint::yellow(e)
+        ))),
+    }
 }
 
 #[derive(Deserialize, Debug)]
