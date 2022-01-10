@@ -1,7 +1,7 @@
 use clap::Parser;
 use serde::Deserialize;
 use std::{
-    ffi::OsStr,
+    ffi::OsString,
     fs::{self, read_link, File},
     io::BufReader,
     os::unix,
@@ -64,36 +64,14 @@ fn main() -> Result<()> {
 /// + `dotfiles_dir` - The dotfiles directory that contains `origin`.
 ///
 /// # Errors
-///
 /// + [`Error::LinkError`]
 ///     + If the path `link` does not exist. Either:
 ///         + the parent directory does not exist, or
 ///         + the path is invalid in some other way, such as not being relative to root (`/`).
 ///     + If the symlink failed for some other reason (probably a bug).
+///     + If `origin` does not exist as a path within the `dotfiles_dir` directory.
 fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
-    let origin = get_origin_path(dotfiles_dir, origin)?;
-    let link = PathBuf::from(shellexpand::full(link)?.into_owned());
-
-    let link_parent = fs::canonicalize(link.parent().ok_or(Error::LinkError(format!(
-        "{} '{}' {}",
-        Paint::red("Invalid path {}",),
-        link.display(),
-        Paint::red("Skipping...")
-    )))?)
-    .map_err(|_| {
-        Error::LinkError(format!(
-            "{} '{}' {}",
-            Paint::red("Cannot create link"),
-            link.display(),
-            Paint::red("because the parent directory does not exist. Skipping...")
-        ))
-    })?;
-    let link_file_name = link.file_name().ok_or(Error::LinkError(format!(
-        "{} '{}'. {}",
-        Paint::red("Invalid path"),
-        link.display(),
-        Paint::red("Skipping...")
-    )))?;
+    let (origin, link, link_parent, link_filename) = expand_paths(dotfiles_dir, link, origin)?;
 
     if link.exists() {
         if let Ok(existing_link_origin) = read_link(&link) {
@@ -116,7 +94,7 @@ fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
                     existing_link_origin.display(),
                     Paint::yellow(".")
                 );
-                backup(&link_parent, link_file_name)?;
+                backup(&link_parent, link_filename)?;
             }
         } else {
             print!(
@@ -125,7 +103,7 @@ fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
                 link.display(),
                 Paint::yellow("already exists.")
             );
-            backup(&link_parent, link_file_name)?;
+            backup(&link_parent, link_filename)?;
         }
     }
 
@@ -150,7 +128,26 @@ fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
         })
 }
 
-fn get_origin_path(dotfiles_dir: &PathBuf, origin: &str) -> Result<PathBuf> {
+/// Returns the following paths (listed in tuple order) in canonical, absolute form with all
+/// intermediate components normalized and symbolic links resolved. See [`fs::canonicalize`].
+///
+/// + The full path to the file that should be linked to
+/// + The full path where the symlink should be created (including file name)
+/// + The full path to the symlink's parent (the previous minus the filename)
+/// + The symlink's filename
+///
+/// # Errors
+/// + [Error::LinkError]
+///     + If the the path `dotfiles_dir/origin` does not exist.
+///     + If `link` is an invalid path.
+///     + If the parent directory of `link` does not exist.
+/// + [Error::ShellexpandLookupError] if a shell variable in `link` is not found in the current
+/// environment.
+fn expand_paths(
+    dotfiles_dir: &PathBuf,
+    link: &str,
+    origin: &str,
+) -> Result<(PathBuf, PathBuf, PathBuf, OsString)> {
     let origin = dotfiles_dir.join(origin);
     let origin = fs::canonicalize(&origin).map_err(|_| {
         Error::LinkError(format!(
@@ -160,12 +157,40 @@ fn get_origin_path(dotfiles_dir: &PathBuf, origin: &str) -> Result<PathBuf> {
             Paint::red("does not exist. Skipping...")
         ))
     })?;
-    Ok(origin)
+
+    let link = PathBuf::from(shellexpand::full(link)?.into_owned());
+
+    let link_parent = link.parent().ok_or(Error::LinkError(format!(
+        "{} '{}' {}",
+        Paint::red("Invalid path {}",),
+        link.display(),
+        Paint::red("Skipping...")
+    )))?;
+    let link_parent = fs::canonicalize(link_parent).map_err(|_| {
+        Error::LinkError(format!(
+            "{} '{}' {}",
+            Paint::red("Cannot create link"),
+            link.display(),
+            Paint::red("because the parent directory does not exist. Skipping...")
+        ))
+    })?;
+
+    let link_filename = link
+        .file_name()
+        .ok_or(Error::LinkError(format!(
+            "{} '{}'. {}",
+            Paint::red("Invalid path"),
+            link.display(),
+            Paint::red("Skipping...")
+        )))?
+        .to_owned();
+
+    Ok((origin, link, link_parent, link_filename))
 }
 
-fn backup(parent_dir: &PathBuf, file_name: &OsStr) -> Result<()> {
-    let path = parent_dir.join(file_name);
-    let mut backup_file = file_name.to_owned();
+fn backup(parent_dir: &PathBuf, file_name: OsString) -> Result<()> {
+    let path = parent_dir.join(&file_name);
+    let mut backup_file = file_name;
     backup_file.push(
         chrono::Local::now()
             .format("-backup-%Y-%m-%d-%H-%M-%S")
