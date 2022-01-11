@@ -75,7 +75,7 @@ fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
 
     if link.exists() {
         if let Ok(existing_link_origin) = read_link(&link) {
-            if fs::canonicalize(&origin)? == fs::canonicalize(&existing_link_origin)? {
+            if origin == fs::canonicalize(&existing_link_origin)? {
                 println!(
                     "{} '{}' {} '{}'{}",
                     Paint::green("Skipping"),
