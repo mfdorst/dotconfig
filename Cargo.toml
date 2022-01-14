@@ -1,6 +1,6 @@
 [package]
 name = "dotconfig"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Michael Dorst <m@mdorst.net>"]
 edition = "2021"
 license = "MIT"
