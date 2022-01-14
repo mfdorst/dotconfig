@@ -76,6 +76,16 @@ fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
     let link = expand_link_file(&link)?;
     let link_filename = link_filename(&link)?;
     let link_parent = link_parent(&link)?;
+
+    if !link_parent.exists() {
+        println!(
+            "{} {} {}",
+            Paint::yellow("The directory"),
+            link_parent.display(),
+            Paint::yellow("does not exist. Creating...")
+        );
+        fs::create_dir_all(&link_parent)?;
+    }
     let link_parent = canonicalize_link_parent(&link_parent, &link_filename)?;
 
     if link.exists() {
