@@ -9,7 +9,7 @@ the system in a repeatable, configurable way.
 cargo install dotconfig
 ```
 ### Using a package manager:
-+ Archlinux (`yay` or another AUR helper will also work)
++ **Archlinux** (`yay` or another AUR helper will also work)
 ```
 paru -S dotconfig
 ```
