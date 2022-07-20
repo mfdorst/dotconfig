@@ -4,8 +4,14 @@ A tool for symlinking configuration files from a central repository to their res
 the system in a repeatable, configurable way.
 
 ## Install
+### Using cargo:
 ```
 cargo install dotconfig
+```
+### Using a package manager:
++ Archlinux (`yay` or another AUR helper will also work)
+```
+paru -S dotconfig
 ```
 
 ## Configuration
