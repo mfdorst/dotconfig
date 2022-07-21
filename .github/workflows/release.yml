@@ -1,0 +1,116 @@
+name: Build Release
+on:
+  push:
+    tags:
+      - v*
+
+jobs:
+  build-releases:
+    strategy:
+      matrix:
+        arch:
+          [
+            "linux/amd64 x86_64",
+            "linux/arm64/v8 aarch64",
+            "linux/arm/v7 armv7h"
+          ]
+    name: Build ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+        with:
+          platforms: all
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v1
+        with:
+          version: latest
+      - name: Read info
+        id: tags
+        shell: bash
+        run: |
+          arch="${{ matrix.arch }}"
+          echo ::set-output name=PLATFORM::${arch%% *}
+          echo ::set-output name=ARCH::${arch##* }
+      - name: Build ${{ matrix.arch }} release
+        shell: bash
+        run: |
+          arch="${{ matrix.arch }}"
+          PLATFORM=${arch%% *}
+          ARCH=${arch##* }
+          mkdir artifacts
+          docker buildx build --platform $PLATFORM \
+          --tag dotconfig:$ARCH \
+          --load \
+          .
+          docker create --name dotconfig-$ARCH dotconfig:$ARCH
+          docker cp dotconfig-$ARCH:/app/dotconfig.tar.zst dotconfig-$ARCH.tar.zst
+          docker container rm dotconfig-$ARCH
+          mv dotconfig-*.tar.zst artifacts
+      - uses: actions/upload-artifact@v2
+        with:
+          name: dotconfig-${{ steps.tags.outputs.arch }}
+          path: artifacts
+
+  create_release:
+    name: Create release from this build
+    needs: [build-releases]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read info
+        id: tags
+        shell: bash
+        run: |
+          echo ::set-output name=TAG::${GITHUB_REF/refs\/tags\//}
+      - uses: actions/download-artifact@v2
+        with:
+          name: dotconfig-x86_64
+      - uses: actions/download-artifact@v2
+        with:
+          name: dotconfig-aarch64
+      - uses: actions/download-artifact@v2
+        with:
+          name: dotconfig-armv7h
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.tags.outputs.tag }}
+          release_name: ${{ steps.tags.outputs.tag }}
+          draft: true
+          prerelease: false
+      - name: Upload x86_64 asset
+        id: upload-release-asset-x86_64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dotconfig-x86_64.tar.zst
+          asset_name: dotconfig-${{ steps.tags.outputs.tag }}-x86_64.tar.zst
+          asset_content_type: application/tar+zstd
+      - name: Upload aarch64 asset
+        id: upload-release-asset-aarch64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dotconfig-aarch64.tar.zst
+          asset_name: dotconfig-${{ steps.tags.outputs.tag }}-aarch64.tar.zst
+          asset_content_type: application/tar+zstd
+      - name: Upload armv7h asset
+        id: upload-release-asset-armv7h
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dotconfig-armv7h.tar.zst
+          asset_name: dotconfig-${{ steps.tags.outputs.tag }}-armv7h.tar.zst
+          asset_content_type: application/tar+zstd
