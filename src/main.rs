@@ -3,7 +3,7 @@ use serde::Deserialize;
 use std::{
     ffi::{OsStr, OsString},
     fs::{self, read_link, File},
-    io::BufReader,
+    io::{stdin, stdout, BufReader, Write},
     os::unix,
     path::{Path, PathBuf},
 };
@@ -45,13 +45,105 @@ fn main() -> Result<()> {
     let reader = BufReader::new(File::open(symlink_list_full_path)?);
     let symlink_list: SymlinkList = serde_yaml::from_reader(reader)?;
 
+    // Display a list of files that will be symlinked
+    for Link { origin, path: link } in &symlink_list.links {
+        let origin = dotfiles_dir.join(origin);
+        let origin = canonicalize_origin(&origin)?;
+        let link = expand_link_file(&link)?;
+
+        let action = choose_install_action(&origin, &link)?;
+        match action {
+            InstallAction::Link | InstallAction::CreateDirAndLink => println!(
+                "{} {} {} {}",
+                Paint::yellow("Will link"),
+                link.display(),
+                Paint::yellow("->"),
+                origin.display()
+            ),
+            InstallAction::BackupAndLink => println!(
+                "{} {} {} {}",
+                Paint::yellow("Will backup and link"),
+                link.display(),
+                Paint::yellow("->"),
+                origin.display()
+            ),
+            InstallAction::Skip => println!(
+                "{} {} {} {}{}",
+                Paint::green("Will skip"),
+                link.display(),
+                Paint::green("->"),
+                origin.display(),
+                Paint::green(". File already linked.")
+            ),
+        }
+    }
+
+    // Ask for permission to proceed
+    print!("Proceed with installation? [Y/n] ");
+    stdout().flush().ok();
+    let mut s = String::new();
+    stdin().read_line(&mut s)?;
+    let s = s.trim().to_lowercase();
+    if s != "" && s != "y" && s != "yes" {
+        println!("Installation cancelled.");
+        return Ok(());
+    }
+
     // Symlink each file listed in config.links
     for Link { origin, path: link } in symlink_list.links {
-        if let Err(e) = symlink(&origin, &link, &dotfiles_dir) {
+        let origin = dotfiles_dir.join(origin);
+        let origin = canonicalize_origin(&origin)?;
+        let link = expand_link_file(&link)?;
+
+        if let Err(e) = symlink(&origin, &link) {
             println!("{}", e);
         }
     }
     Ok(())
+}
+
+enum InstallAction {
+    Skip,
+    BackupAndLink,
+    CreateDirAndLink,
+    Link,
+}
+
+/// Choose an install action for a pending link.
+///
+/// If the parent directory of `link` does not exist, return `BackupAndLink`.
+/// If `link` exists and is already a symlink to `origin`, return `Skip`.
+/// If `link` exists, but is not a symlink to `origin`, return `BackupAndLink`.
+/// If `link` does not exist but its parent directory does, return `Link`.
+///
+/// # Params
+/// + `origin` - The fully canonicalizd path to the file that will be installed at `link`.
+/// + `link` - The path that `origin` is to be installed at. Shell variables and special symbols
+/// (e.g. `~`) will not be resolved.
+fn choose_install_action(origin: &PathBuf, link: &PathBuf) -> Result<InstallAction> {
+    let link_parent = link_parent(&link)?;
+
+    if !link_parent.exists() {
+        // The file's parent directory does not exist.
+        Ok(InstallAction::CreateDirAndLink)
+    } else if link.exists() {
+        if let Ok(existing_link_origin) = read_link(&link) {
+            // The file exists, and is a symlink.
+            if *origin == fs::canonicalize(&existing_link_origin)? {
+                // The file is already linked to origin.
+                Ok(InstallAction::Skip)
+            } else {
+                // The file is linked to something other than origin.
+                Ok(InstallAction::BackupAndLink)
+            }
+        } else {
+            // The file exists but is not a symlink.
+            Ok(InstallAction::BackupAndLink)
+        }
+    } else {
+        // The file does not exist, but its parent directory does.
+        Ok(InstallAction::Link)
+    }
 }
 
 /// Create a symlink from `link` to `origin`. If `origin` already exists, back it up (rename it to
@@ -70,56 +162,38 @@ fn main() -> Result<()> {
 ///         + the path is invalid in some other way, such as not being relative to root (`/`).
 ///     + If the symlink failed for some other reason (probably a bug).
 ///     + If `origin` does not exist as a path within the `dotfiles_dir` directory.
-fn symlink(origin: &str, link: &str, dotfiles_dir: &PathBuf) -> Result<()> {
-    let origin = dotfiles_dir.join(origin);
-    let origin = canonicalize_origin(&origin)?;
-    let link = expand_link_file(&link)?;
+fn symlink(origin: &PathBuf, link: &PathBuf) -> Result<()> {
     let link_filename = link_filename(&link)?;
     let link_parent = link_parent(&link)?;
 
-    if !link_parent.exists() {
-        println!(
-            "{} {} {}",
-            Paint::yellow("The directory"),
-            link_parent.display(),
-            Paint::yellow("does not exist. Creating...")
-        );
-        fs::create_dir_all(&link_parent)?;
-    }
-    let link_parent = canonicalize_link_parent(&link_parent, &link_filename)?;
+    let action = choose_install_action(&origin, &link)?;
 
-    if link.exists() {
-        if let Ok(existing_link_origin) = read_link(&link) {
-            if origin == fs::canonicalize(&existing_link_origin)? {
-                println!(
-                    "{} '{}' {} '{}'{}",
-                    Paint::green("Skipping"),
-                    origin.display(),
-                    Paint::green("->"),
-                    link.display(),
-                    Paint::green(". File already linked.")
-                );
-                return Ok(());
-            } else {
-                print!(
-                    "{} '{}' {} '{}'{} ",
-                    Paint::yellow("The path"),
-                    link.display(),
-                    Paint::yellow("is already linked to"),
-                    existing_link_origin.display(),
-                    Paint::yellow(".")
-                );
-                backup(&link_parent, &link_filename)?;
-            }
-        } else {
-            print!(
-                "{} '{}' {} ",
-                Paint::yellow("The path"),
-                link.display(),
-                Paint::yellow("already exists.")
+    match action {
+        InstallAction::CreateDirAndLink => {
+            println!(
+                "{} {} {}",
+                Paint::yellow("The directory"),
+                link_parent.display(),
+                Paint::yellow("does not exist. Creating...")
             );
+            fs::create_dir_all(&link_parent)?;
+        }
+        InstallAction::BackupAndLink => {
+            let link_parent = canonicalize_link_parent(&link_parent, &link_filename)?;
             backup(&link_parent, &link_filename)?;
         }
+        InstallAction::Skip => {
+            println!(
+                "{} '{}' {} '{}'{}",
+                Paint::green("Skipping"),
+                origin.display(),
+                Paint::green("->"),
+                link.display(),
+                Paint::green(". File already linked.")
+            );
+            return Ok(());
+        }
+        InstallAction::Link => {}
     }
 
     print!(
@@ -268,8 +342,10 @@ where
     backup_file.push(date);
     let backup = parent_dir.as_ref().join(backup_file);
     print!(
-        "{} '{}'...",
-        Paint::yellow("Backing up to"),
+        "{} {} {} {}...",
+        Paint::yellow("Backing up"),
+        path.display(),
+        Paint::yellow("->"),
         backup.display()
     );
     match fs::rename(&path, backup) {
