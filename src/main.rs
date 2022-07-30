@@ -45,37 +45,58 @@ fn main() -> Result<()> {
     let reader = BufReader::new(File::open(symlink_list_full_path)?);
     let symlink_list: SymlinkList = serde_yaml::from_reader(reader)?;
 
-    // Display a list of files that will be symlinked
-    for Link { origin, path: link } in &symlink_list.links {
-        let origin = dotfiles_dir.join(origin);
-        let origin = canonicalize_origin(&origin)?;
-        let link = expand_link_file(&link)?;
+    let symlink_list: Vec<(PathBuf, PathBuf)> = symlink_list
+        .links
+        .into_iter()
+        .map(|Link { origin, path }| {
+            let origin = dotfiles_dir.join(origin);
+            let origin = canonicalize_origin(&origin)?;
+            let path = expand_link_file(&path)?;
+            Ok((origin, path))
+        })
+        .collect::<Result<_, Error>>()?;
+    let symlink_list: Vec<(PathBuf, PathBuf, InstallAction)> = symlink_list
+        .into_iter()
+        .map(|(origin, path)| {
+            let action = choose_install_action(&origin, &path)?;
+            Ok((origin, path, action))
+        })
+        .collect::<Result<_, Error>>()?;
 
-        let action = choose_install_action(&origin, &link)?;
+    // Display a list of files that will be symlinked
+    for (origin, link, action) in &symlink_list {
         match action {
             InstallAction::Link | InstallAction::CreateDirAndLink => println!(
                 "{} {} {} {}",
-                Paint::yellow("Will link"),
+                Paint::yellow("Will link:           "),
                 link.display(),
                 Paint::yellow("->"),
                 origin.display()
             ),
             InstallAction::BackupAndLink => println!(
                 "{} {} {} {}",
-                Paint::yellow("Will backup and link"),
+                Paint::yellow("Will backup and link:"),
                 link.display(),
                 Paint::yellow("->"),
                 origin.display()
             ),
             InstallAction::Skip => println!(
-                "{} {} {} {}{}",
-                Paint::green("Will skip"),
+                "{} {} {} {}",
+                Paint::green("Already linked:      "),
                 link.display(),
                 Paint::green("->"),
                 origin.display(),
-                Paint::green(". File already linked.")
             ),
         }
+    }
+
+    if symlink_list.iter().all(|(_, _, a)| match a {
+        InstallAction::Skip => true,
+        _ => false,
+    }) {
+        // All actions are `Skip`.
+        println!("{}", Paint::green("No action needed."));
+        return Ok(());
     }
 
     // Ask for permission to proceed
@@ -90,11 +111,7 @@ fn main() -> Result<()> {
     }
 
     // Symlink each file listed in config.links
-    for Link { origin, path: link } in symlink_list.links {
-        let origin = dotfiles_dir.join(origin);
-        let origin = canonicalize_origin(&origin)?;
-        let link = expand_link_file(&link)?;
-
+    for (origin, link, _) in symlink_list {
         if let Err(e) = symlink(&origin, &link) {
             println!("{}", e);
         }
