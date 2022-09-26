@@ -1,0 +1,43 @@
+name: AppImage
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build --release
+      - uses: actions/upload-artifact@v3
+        with:
+          name: executable
+          path: target/release/dotconfig
+
+  build-appimage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build AppImage
+        uses: actions/download-artifact@v3
+        with:
+          name: executable
+          path: dotconfig
+        uses: AppImageCrafters/build-appimage-action@master
+        env:
+          UPDATE_INFO: gh-releases-zsync|mfdorst|dotconfig|latest|*x86_64.AppImage.zsync
+        with:
+          recipe: AppImageBuilder.yml
+      - uses: actions/upload-artifact@v3
+        with:
+          name: AppImage
+          path: './*.AppImage*'
